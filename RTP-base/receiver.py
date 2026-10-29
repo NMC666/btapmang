@@ -64,14 +64,12 @@ def receiver(receiver_ip, receiver_port, window_size):
             datagram, address = sock.recvfrom(65535)
             decoded = _decode_packet(datagram)
             if decoded is None:
-                # Corrupt or malformed packets receive no ACK.
                 continue
 
             header, payload = decoded
 
             if header.type == START:
                 if active_peer is not None:
-                    # This receiver handles only one connection at a time.
                     continue
                 if header.seq_num != 0 or header.length != 0:
                     continue
@@ -88,8 +86,6 @@ def receiver(receiver_ip, receiver_port, window_size):
             if header.type == DATA:
                 seq_num = header.seq_num
 
-                # Keep only the current receive window. Packets below the
-                # window are duplicates and still elicit the current ACK.
                 if seq_num >= next_expected + window_size:
                     continue
 
@@ -112,7 +108,6 @@ def receiver(receiver_ip, receiver_port, window_size):
                     _send_ack(sock, active_peer, header.seq_num + 1)
                     return
 
-                # An END beyond a gap has not completed the transfer.
                 _send_ack(sock, active_peer, next_expected)
     finally:
         sock.close()

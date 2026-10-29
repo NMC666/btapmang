@@ -86,7 +86,6 @@ def receiver(receiver_ip, receiver_port, window_size):
             if header.type == DATA:
                 seq_num = header.seq_num
                 if seq_num >= next_expected + window_size:
-                    # Outside the receive window: discard without an ACK.
                     continue
 
                 if seq_num >= next_expected:
@@ -97,7 +96,6 @@ def receiver(receiver_ip, receiver_port, window_size):
                             next_expected += 1
                         sys.stdout.buffer.flush()
 
-                # Optimized mode ACKs each accepted DATA packet individually.
                 _send_ack(sock, active_peer, seq_num)
                 continue
 

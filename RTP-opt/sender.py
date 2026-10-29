@@ -126,7 +126,6 @@ def sender(receiver_ip, receiver_port, window_size):
             if header.type != ACK or header.length != 0:
                 continue
 
-            # In RTP-opt, DATA ACKs name the individual acknowledged packet.
             if base <= header.seq_num < next_seq_num:
                 acknowledged.add(header.seq_num)
                 old_base = base

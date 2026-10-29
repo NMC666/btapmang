@@ -78,7 +78,6 @@ def sender(receiver_ip, receiver_port, window_size):
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        # START consumes sequence number 0; DATA begins at sequence number 1.
         sock.sendto(_make_packet(START, 0), destination)
         _wait_for_ack(sock, 1)
 
@@ -96,8 +95,6 @@ def sender(receiver_ip, receiver_port, window_size):
                 if deadline is None:
                     deadline = time.monotonic() + RETRANSMIT_SECONDS
 
-            # All transmitted packets have been acknowledged; the next loop
-            # iteration will fill the newly opened part of the window.
             if base == next_seq_num:
                 deadline = None
                 continue
@@ -126,20 +123,16 @@ def sender(receiver_ip, receiver_port, window_size):
             if header.type != ACK or header.length != 0:
                 continue
 
-            # ACK seq_num is the next DATA sequence number the receiver needs.
             if base < header.seq_num <= next_seq_num:
                 base = header.seq_num
                 if base < next_seq_num:
-                    # The cumulative ACK advanced the window, so restart its timer.
                     deadline = time.monotonic() + RETRANSMIT_SECONDS
                 else:
                     deadline = None
 
-        # END follows all DATA packets and is given the next sequence number.
         end_seq_num = packet_count + 1
         sock.sendto(_make_packet(END, end_seq_num), destination)
 
-        # The receiver can exit after sending this ACK, so END is not retried.
         end_deadline = time.monotonic() + RETRANSMIT_SECONDS
         while True:
             remaining = end_deadline - time.monotonic()
