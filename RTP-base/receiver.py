@@ -14,7 +14,8 @@ HEADER_SIZE = 16
 MAX_PACKET_SIZE = 1472
 
 
-def _make_packet(packet_type, seq_num, payload=b""):
+def _pack_segment(packet_type, seq_num, payload=b""):
+    """Serialize an RTP segment after filling in its CRC checksum."""
     header = PacketHeader(
         type=packet_type,
         seq_num=seq_num,
@@ -25,7 +26,8 @@ def _make_packet(packet_type, seq_num, payload=b""):
     return bytes(header / payload)
 
 
-def _decode_packet(datagram):
+def _unpack_segment(datagram):
+    """Validate size, declared payload length, and checksum before use."""
     if len(datagram) < HEADER_SIZE or len(datagram) > MAX_PACKET_SIZE:
         return None
 
@@ -45,7 +47,16 @@ def _decode_packet(datagram):
 
 
 def _send_ack(sock, address, seq_num):
-    sock.sendto(_make_packet(ACK, seq_num), address)
+    sock.sendto(_pack_segment(ACK, seq_num), address)
+
+
+def _flush_contiguous_payloads(buffered, next_expected):
+    """Write the newly contiguous run and return its next missing sequence."""
+    while next_expected in buffered:
+        sys.stdout.buffer.write(buffered.pop(next_expected))
+        next_expected += 1
+    sys.stdout.buffer.flush()
+    return next_expected
 
 
 def receiver(receiver_ip, receiver_port, window_size):
@@ -62,7 +73,7 @@ def receiver(receiver_ip, receiver_port, window_size):
     try:
         while True:
             datagram, address = sock.recvfrom(65535)
-            decoded = _decode_packet(datagram)
+            decoded = _unpack_segment(datagram)
             if decoded is None:
                 continue
 
@@ -93,10 +104,9 @@ def receiver(receiver_ip, receiver_port, window_size):
                     buffered.setdefault(seq_num, payload)
 
                     if seq_num == next_expected:
-                        while next_expected in buffered:
-                            sys.stdout.buffer.write(buffered.pop(next_expected))
-                            next_expected += 1
-                        sys.stdout.buffer.flush()
+                        next_expected = _flush_contiguous_payloads(
+                            buffered, next_expected
+                        )
 
                 _send_ack(sock, active_peer, next_expected)
                 continue

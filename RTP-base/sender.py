@@ -17,7 +17,8 @@ MAX_PAYLOAD_SIZE = MAX_PACKET_SIZE - HEADER_SIZE
 RETRANSMIT_SECONDS = 0.5
 
 
-def _make_packet(packet_type, seq_num, payload=b""):
+def _pack_segment(packet_type, seq_num, payload=b""):
+    """Build one wire segment, calculating the checksum with its field cleared."""
     header = PacketHeader(
         type=packet_type,
         seq_num=seq_num,
@@ -28,7 +29,8 @@ def _make_packet(packet_type, seq_num, payload=b""):
     return bytes(header / payload)
 
 
-def _decode_packet(datagram):
+def _unpack_segment(datagram):
+    """Return a verified header and body, or None when the datagram is malformed."""
     if len(datagram) < HEADER_SIZE or len(datagram) > MAX_PACKET_SIZE:
         return None
 
@@ -50,7 +52,7 @@ def _decode_packet(datagram):
 def _wait_for_ack(sock, expected_seq_num):
     while True:
         datagram, _ = sock.recvfrom(2048)
-        decoded = _decode_packet(datagram)
+        decoded = _unpack_segment(datagram)
         if decoded is None:
             continue
 
@@ -61,6 +63,7 @@ def _wait_for_ack(sock, expected_seq_num):
 
 
 def sender(receiver_ip, receiver_port, window_size):
+    """Send stdin as ordered DATA segments using a cumulative-ACK window."""
     if window_size <= 0:
         raise ValueError("window_size must be a positive integer")
 
@@ -71,14 +74,14 @@ def sender(receiver_ip, receiver_port, window_size):
         for offset in range(0, len(message), MAX_PAYLOAD_SIZE)
     ]
     packets = {
-        seq_num: _make_packet(DATA, seq_num, chunk)
+        seq_num: _pack_segment(DATA, seq_num, chunk)
         for seq_num, chunk in enumerate(chunks, start=1)
     }
     packet_count = len(chunks)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        sock.sendto(_make_packet(START, 0), destination)
+        sock.sendto(_pack_segment(START, 0), destination)
         _wait_for_ack(sock, 1)
 
         base = 1
@@ -115,7 +118,7 @@ def sender(receiver_ip, receiver_port, window_size):
                 deadline = time.monotonic() + RETRANSMIT_SECONDS
                 continue
 
-            decoded = _decode_packet(datagram)
+            decoded = _unpack_segment(datagram)
             if decoded is None:
                 continue
 
@@ -131,7 +134,7 @@ def sender(receiver_ip, receiver_port, window_size):
                     deadline = None
 
         end_seq_num = packet_count + 1
-        sock.sendto(_make_packet(END, end_seq_num), destination)
+        sock.sendto(_pack_segment(END, end_seq_num), destination)
 
         end_deadline = time.monotonic() + RETRANSMIT_SECONDS
         while True:
@@ -144,7 +147,7 @@ def sender(receiver_ip, receiver_port, window_size):
             except socket.timeout:
                 break
 
-            decoded = _decode_packet(datagram)
+            decoded = _unpack_segment(datagram)
             if decoded is None:
                 continue
             header, _ = decoded
